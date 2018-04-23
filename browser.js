@@ -80,6 +80,13 @@ window.addEventListener("keydown", function(e) {
 
 dew.on('show', function() {
     visible = true;
+    
+    dew.getVersion().then(function (version) {
+        if(parseVersion(version) < parseVersion("0.6.1")) {
+            dew.command('Game.HideChat 1');
+        }
+    });
+    
     dew.command('Game.HideH3UI 1');
     dew.command('Settings.Gamepad').then((result) => {
         result = parseInt(result);
@@ -269,9 +276,13 @@ function serverPingProc() {
     });
 }
 
+let pins = {
+    '72.50.215.211:12072': 1,
+    '72.50.215.211:12074': 1,
+    '72.50.215.211:12075': 1
+};
 
 function ping(info) {
-
     return new Promise((resolve, rejeect) => {
         var xhr = new XMLHttpRequest();
         xhr.open('GET',`http://${info.server}/`, true);
@@ -287,6 +298,11 @@ function ping(info) {
             let ping = Math.round((endTime - startTime) * .45);
             let officialStatus = officialServers[info.server];
 
+            if((data.numPlayers < 0 || data.numPlayers > 16) ||
+                (data.players && data.players.length !== data.numPlayers)) {
+                rejeect();
+            }
+
             resolve({
                 type: data.passworded ? 'private' : (officialStatus ? (officialStatus.ranked ? 'ranked' : 'social') : ''),
                 ping: ping,
@@ -298,6 +314,8 @@ function ping(info) {
                 name: data.name,
                 numPlayers: data.numPlayers,
                 maxPlayers: data.maxPlayers,
+                pinned: !!pins[info.server],
+                version: data.eldewritoVersion
             });
         }
        
@@ -313,7 +331,7 @@ function ServerRow(server, connectCallback) {
 
     return React.createElement(
         'tr',
-        { key: server.IP, 'data-ip': server.IP,  'data-type': server.type},
+        { key: server.IP, 'data-ip': server.IP,  'data-type': server.type, className: server.pinned ? 'pinned' : ''},
         React.createElement(
             'td',
             null,
@@ -348,6 +366,11 @@ function ServerRow(server, connectCallback) {
             'td',
             null,
             `${server.numPlayers}/${server.maxPlayers}`
+        ),
+        React.createElement(
+            'td',
+            null,
+            sanitize(`${server.version}`)
         )
     );
 }
@@ -396,6 +419,11 @@ function ServerList(model, connectCallback) {
                     'th',
                     { onMouseDown: () => model.sort('numPlayers'), className: model.currentSortKey == 'numPlayers' ? `sort-${model.currentSortDir}` : '' } ,
                     'Players'
+                ),
+                React.createElement(
+                    'th',
+                    { onMouseDown: () => model.sort('version'), className: model.currentSortKey == 'version' ? `sort-${model.currentSortDir}` : '' } ,
+                    'VERSION'
                 )
             )
         ),
@@ -466,6 +494,21 @@ var serverComparators = {
 
 function sortme() {
     model.currentServerList.sort(serverComparators[model.currentSortDir]);
+
+    let top = [];
+    let rest = [];
+    for(let i = 0; i < model.currentServerList.length; i++) {
+        let server = model.currentServerList[i];
+
+        if(server.pinned) {
+            top.push(server); 
+        } else {
+            rest.push(server);
+        }
+    }
+
+    model.currentServerList = top.concat(rest);
+
     render();
 }
 
@@ -519,6 +562,9 @@ function render() {
 }
 
 function sanitize(str) {
+    if(!str)
+        return 'Blam!';
+
     if(str.length > 80)
         str = str.substr(0, 80) + '...';
 
@@ -605,3 +651,16 @@ swal.setDefaults({
     confirmButtonText: "<img src='dew://assets/buttons/XboxOne_A.png'>Ok",
     cancelButtonText: "<img src='dew://assets/buttons/XboxOne_B.png'>Cancel"
 })
+
+function parseVersion(str) { 
+    var result = 0;
+    var suffixPos = str.indexOf('-');
+    if(suffixPos != -1)
+        str = str.substr(0, suffixPos);
+    
+    var parts = str.split('.');
+    for(var i = 0; i < parts.length && i < 4; i++) {
+        result |= (parseInt(parts[i]) << (24-(i*8)));
+    }  
+    return result;
+}
